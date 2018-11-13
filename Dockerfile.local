@@ -1,4 +1,4 @@
-FROM alpine:3.7
+FROM alpine
 LABEL maintainer "q@shellpub.com"
 
 ARG app_name=godns
@@ -8,14 +8,14 @@ RUN apk --update add --no-cache -t .build-deps \
 	tini \
 	su-exec \
   && echo "===> Building hmbd daemon..." \
-  && apk del --purge .build-deps &&
+  && apk del --purge .build-deps \ 
   && mkdir /${app_name}
 
 ## fix golang link
 RUN mkdir /lib64 && ln -s /lib/libc.musl-x86_64.so.1 /lib64/ld-linux-x86-64.so.2
 
 COPY ${app_name} /${app_name}
-RUN chmod +x /${app_name}/${app_name} \
+RUN chmod +x /${app_name}/${app_name} 
 WORKDIR /${app_name}
 
 ENTRYPOINT ["./godns"]
