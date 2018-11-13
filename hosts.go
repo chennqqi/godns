@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"fmt"
 	"net"
 	"net/url"
 	"os"
@@ -262,7 +261,6 @@ func (f *FileHosts) refreshFromConsul() bool {
 	}
 
 	hostMap := make(AddrMap)
-	fmt.Println("HOSTFILE:", string(txt))
 	buf := bytes.NewBuffer(txt)
 	scanner := bufio.NewScanner(buf)
 	for scanner.Scan() {

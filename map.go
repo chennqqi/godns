@@ -1,9 +1,8 @@
 package main
 
 import (
-	"strings"
-
 	"golang.org/x/net/publicsuffix"
+	"strings"
 )
 
 type IPList struct {
@@ -13,7 +12,9 @@ type IPList struct {
 
 func (t *IPList) ToList() []string {
 	l := len(t.addrs)
-	return t.addrs
+	if l <= 1 {
+		return t.addrs
+	}
 
 	index := t.index % l
 	ret := make([]string, len(t.addrs))
