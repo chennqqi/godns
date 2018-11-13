@@ -260,12 +260,18 @@ func (f *FileHosts) refreshFromConsul() bool {
 	if gconsul == nil {
 		u, err := url.Parse(f.file)
 		if err != nil {
-			logger.Warn("Update hosts records from consul(%v) failed %s", f.file, err)
+			logger.Warn("Update hosts records parse url consul(%v) failed %s", f.file, err)
 			return false
 		}
-		f.consulAgent = fmt.Sprintf("%s:%s", u.Host, u.Port())
+		f.consulAgent = u.Host
 		f.consulKey = u.Path
 		op := consul.NewConsulOp(f.consulAgent)
+		op.Fix()
+		err = op.Ping()
+		if err != nil {
+			logger.Warn("Update hosts records consul ping(%v) failed %s", f.file, err)
+			return false
+		}
 		gconsul = op
 	}
 
@@ -280,17 +286,16 @@ func (f *FileHosts) refreshFromConsul() bool {
 	}
 
 	hostMap := make(map[string]string)
+	fmt.Println("HOSTFILE:", string(txt))
 	buf := bytes.NewBuffer(txt)
 	scanner := bufio.NewScanner(buf)
 	for scanner.Scan() {
 		line := scanner.Text()
 		line = strings.TrimSpace(line)
 		line = strings.Replace(line, "\t", " ", -1)
-
 		if strings.HasPrefix(line, "#") || line == "" {
 			continue
 		}
-
 		sli := strings.Split(line, " ")
 
 		if len(sli) < 2 {
@@ -313,6 +318,7 @@ func (f *FileHosts) refreshFromConsul() bool {
 			hostMap[strings.ToLower(domain)] = ip
 		}
 	}
+	f.hosts = hostMap
 	f.modifyIndex = index
 	return true
 }

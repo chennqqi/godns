@@ -84,7 +84,6 @@ type CacheSettings struct {
 type HostsSettings struct {
 	Enable          bool
 	HostsFile       string `toml:"host-file"`
-	ConsulEnable    string `toml:"host-file"`
 	RedisEnable     bool   `toml:"redis-enable"`
 	RedisKey        string `toml:"redis-key"`
 	TTL             uint32 `toml:"ttl"`
