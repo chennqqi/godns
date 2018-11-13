@@ -30,7 +30,7 @@ type Hosts struct {
 func NewHosts(hs HostsSettings, rs RedisSettings) Hosts {
 	fileHosts := &FileHosts{
 		file:  hs.HostsFile,
-		hosts: make(map[string]string),
+		hosts: make(AddrMap),
 	}
 
 	var redisHosts *RedisHosts
@@ -161,8 +161,9 @@ func (r *RedisHosts) clear() {
 
 type FileHosts struct {
 	file  string
-	hosts map[string]string
-	mu    sync.RWMutex
+	hosts AddrMap
+
+	//for disk file
 	mtime time.Time
 
 	//for consul
@@ -172,32 +173,7 @@ type FileHosts struct {
 }
 
 func (f *FileHosts) Get(domain string) ([]string, bool) {
-	domain = strings.ToLower(domain)
-	hostMap := f.hosts
-
-	ip, ok := hostMap[domain]
-	if ok {
-		return []string{ip}, true
-	}
-
-	sld, err := publicsuffix.EffectiveTLDPlusOne(domain)
-	if err != nil {
-		return nil, false
-	}
-
-	for host, ip := range hostMap {
-		if strings.HasPrefix(host, "*.") {
-			old, err := publicsuffix.EffectiveTLDPlusOne(host)
-			if err != nil {
-				continue
-			}
-			if sld == old {
-				return []string{ip}, true
-			}
-		}
-	}
-
-	return nil, false
+	return f.hosts.Get(domain)
 }
 
 func (f *FileHosts) refreshFromDisk() bool {
@@ -217,7 +193,7 @@ func (f *FileHosts) refreshFromDisk() bool {
 	}
 	defer buf.Close()
 
-	hostMap := make(map[string]string)
+	hostMap := make(AddrMap)
 	scanner := bufio.NewScanner(buf)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -247,7 +223,7 @@ func (f *FileHosts) refreshFromDisk() bool {
 			if domain == "" {
 				continue
 			}
-			hostMap[strings.ToLower(domain)] = ip
+			hostMap.Add(strings.ToLower(domain), ip)
 		}
 	}
 	f.mtime = st.ModTime()
@@ -285,7 +261,7 @@ func (f *FileHosts) refreshFromConsul() bool {
 		return false
 	}
 
-	hostMap := make(map[string]string)
+	hostMap := make(AddrMap)
 	fmt.Println("HOSTFILE:", string(txt))
 	buf := bytes.NewBuffer(txt)
 	scanner := bufio.NewScanner(buf)
@@ -315,7 +291,7 @@ func (f *FileHosts) refreshFromConsul() bool {
 			if domain == "" {
 				continue
 			}
-			hostMap[strings.ToLower(domain)] = ip
+			hostMap.Add(strings.ToLower(domain), ip)
 		}
 	}
 	f.hosts = hostMap
