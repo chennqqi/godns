@@ -2,14 +2,23 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/chennqqi/goutils/consul"
 	"github.com/hoisie/redis"
 	"golang.org/x/net/publicsuffix"
+)
+
+var (
+	gconsul     *consul.ConsulOperator
+	gconsulOnce sync.Once
 )
 
 type Hosts struct {
@@ -44,7 +53,6 @@ func NewHosts(hs HostsSettings, rs RedisSettings) Hosts {
 Match local /etc/hosts file first, remote redis records second
 */
 func (h *Hosts) Get(domain string, family int) ([]net.IP, bool) {
-
 	var sips []string
 	var ip net.IP
 	var ips []net.IP
@@ -155,13 +163,19 @@ type FileHosts struct {
 	file  string
 	hosts map[string]string
 	mu    sync.RWMutex
+	mtime time.Time
+
+	//for consul
+	modifyIndex uint64
+	consulKey   string
+	consulAgent string
 }
 
 func (f *FileHosts) Get(domain string) ([]string, bool) {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
 	domain = strings.ToLower(domain)
-	ip, ok := f.hosts[domain]
+	hostMap := f.hosts
+
+	ip, ok := hostMap[domain]
 	if ok {
 		return []string{ip}, true
 	}
@@ -171,7 +185,7 @@ func (f *FileHosts) Get(domain string) ([]string, bool) {
 		return nil, false
 	}
 
-	for host, ip := range f.hosts {
+	for host, ip := range hostMap {
 		if strings.HasPrefix(host, "*.") {
 			old, err := publicsuffix.EffectiveTLDPlusOne(host)
 			if err != nil {
@@ -186,22 +200,26 @@ func (f *FileHosts) Get(domain string) ([]string, bool) {
 	return nil, false
 }
 
-func (f *FileHosts) Refresh() {
+func (f *FileHosts) refreshFromDisk() bool {
+	st, err := os.Stat(f.file)
+	if err != nil {
+		logger.Warn("Update hosts records from file failed %s", err)
+		return false
+	}
+	if st.ModTime().Equal(f.mtime) {
+		return false
+	}
+
 	buf, err := os.Open(f.file)
 	if err != nil {
 		logger.Warn("Update hosts records from file failed %s", err)
-		return
+		return false
 	}
 	defer buf.Close()
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	f.clear()
-
+	hostMap := make(map[string]string)
 	scanner := bufio.NewScanner(buf)
 	for scanner.Scan() {
-
 		line := scanner.Text()
 		line = strings.TrimSpace(line)
 		line = strings.Replace(line, "\t", " ", -1)
@@ -229,13 +247,79 @@ func (f *FileHosts) Refresh() {
 			if domain == "" {
 				continue
 			}
-
-			f.hosts[strings.ToLower(domain)] = ip
+			hostMap[strings.ToLower(domain)] = ip
 		}
 	}
+	f.mtime = st.ModTime()
+	f.hosts = hostMap
 	logger.Debug("update hosts records from %s, total %d records.", f.file, len(f.hosts))
+	return true
 }
 
-func (f *FileHosts) clear() {
-	f.hosts = make(map[string]string)
+func (f *FileHosts) refreshFromConsul() bool {
+	if gconsul == nil {
+		u, err := url.Parse(f.file)
+		if err != nil {
+			logger.Warn("Update hosts records from consul(%v) failed %s", f.file, err)
+			return false
+		}
+		f.consulAgent = fmt.Sprintf("%s:%s", u.Host, u.Port())
+		f.consulKey = u.Path
+		op := consul.NewConsulOp(f.consulAgent)
+		gconsul = op
+	}
+
+	op := gconsul
+	txt, index, err := op.GetEx(f.consulKey)
+	if err != nil {
+		logger.Warn("Update hosts consul.GetEx from consul(%v) failed %s", f.file, err)
+		return false
+	}
+	if index == f.modifyIndex {
+		return false
+	}
+
+	hostMap := make(map[string]string)
+	buf := bytes.NewBuffer(txt)
+	scanner := bufio.NewScanner(buf)
+	for scanner.Scan() {
+		line := scanner.Text()
+		line = strings.TrimSpace(line)
+		line = strings.Replace(line, "\t", " ", -1)
+
+		if strings.HasPrefix(line, "#") || line == "" {
+			continue
+		}
+
+		sli := strings.Split(line, " ")
+
+		if len(sli) < 2 {
+			continue
+		}
+
+		ip := sli[0]
+		if !isIP(ip) {
+			continue
+		}
+
+		// Would have multiple columns of domain in line.
+		// Such as "127.0.0.1  localhost localhost.domain" on linux.
+		// The domains may not strict standard, like "local" so don't check with f.isDomain(domain).
+		for i := 1; i <= len(sli)-1; i++ {
+			domain := strings.TrimSpace(sli[i])
+			if domain == "" {
+				continue
+			}
+			hostMap[strings.ToLower(domain)] = ip
+		}
+	}
+	f.modifyIndex = index
+	return true
+}
+
+func (f *FileHosts) Refresh() bool {
+	if strings.HasPrefix(f.file, "consul://") {
+		return f.refreshFromConsul()
+	}
+	return f.refreshFromDisk()
 }

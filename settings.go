@@ -84,6 +84,7 @@ type CacheSettings struct {
 type HostsSettings struct {
 	Enable          bool
 	HostsFile       string `toml:"host-file"`
+	ConsulEnable    string `toml:"host-file"`
 	RedisEnable     bool   `toml:"redis-enable"`
 	RedisKey        string `toml:"redis-key"`
 	TTL             uint32 `toml:"ttl"`
@@ -91,7 +92,6 @@ type HostsSettings struct {
 }
 
 func init() {
-
 	var configFile string
 
 	flag.StringVar(&configFile, "c", "./etc/godns.conf", "Look for godns toml-formatting config file in this directory")
@@ -102,5 +102,4 @@ func init() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-
 }

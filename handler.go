@@ -30,7 +30,6 @@ type GODNSHandler struct {
 }
 
 func NewHandler() *GODNSHandler {
-
 	var (
 		cacheConfig     CacheSettings
 		resolver        *Resolver
