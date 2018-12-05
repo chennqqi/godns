@@ -1,4 +1,4 @@
-FROM malice/alpine
+FROM malice
 
 LABEL maintainer "https://github.com/chennqqi"
 
@@ -19,10 +19,6 @@ RUN apk --update add --no-cache -t .build-deps \
   && go build -ldflags "-X main.Version=$(cat VERSION) -X main.BuildTime=$(date -u +%Y%m%d)" -o /bin/godns \
   && rm -rf /go /usr/local/go /usr/lib/go /tmp/* \
   && apk del --purge .build-deps
-
-
-RUN chown malice -R /malware
-WORKDIR /malware
 
 # Add hmb soft 
 # Update ClamAV Definitions
